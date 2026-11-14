@@ -79,6 +79,8 @@ class FloatingButtonService : Service() {
             }
             setPadding(0, 0, 0, 0)
             setOnClickListener {
+                // Full-page reading if it's turned on; otherwise screen capture.
+                if (PageReaderService.scan()) return@setOnClickListener
                 val openScanner = Intent(this@FloatingButtonService, MainActivity::class.java)
                     .setAction(MainActivity.ACTION_SCAN)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -100,6 +102,13 @@ class FloatingButtonService : Service() {
 
         windowManager?.addView(button, params)
         floatingButton = button
+    }
+
+    private fun setButtonBusy(busy: Boolean) {
+        floatingButton?.apply {
+            text = if (busy) "…" else "P"
+            isEnabled = !busy
+        }
     }
 
     private fun setButtonVisible(visible: Boolean) {
@@ -126,6 +135,11 @@ class FloatingButtonService : Service() {
         /** Hides the P button so it doesn't end up in the screenshot. Call on the main thread. */
         fun setVisible(visible: Boolean) {
             activeInstance?.get()?.setButtonVisible(visible)
+        }
+
+        /** Shows "…" on the button while a full-page scan runs. Call on the main thread. */
+        fun setBusy(busy: Boolean) {
+            activeInstance?.get()?.setButtonBusy(busy)
         }
     }
 }

@@ -90,6 +90,7 @@ object ListingParser {
         "seller information", "seller details", "location is approximate",
         "today's picks", "hide listing", "see translation", "description", "see less",
         "about this item", "marketplace", "condition", "view seller profile",
+        "message seller", "like", "follow", "send offer", "make offer", "see all",
     )
 
     private val DESCRIPTION_STOP = listOf(

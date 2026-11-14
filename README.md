@@ -12,6 +12,12 @@ An Android floating scanner for Pokémon listings on Facebook Marketplace.
    - **Warnings**: sponsored ads, sealed products priced far below normal, descriptions cut off by "See more"
 4. Results show in a notification and under **Last Scan**, with the raw screen text below.
 
+## Full-page reading (recommended)
+Turn on **Poke Deal full-page reading** in Android Accessibility settings (button in the app).
+Then tapping P reads the listing's text directly (no OCR typos), taps "See more",
+scrolls through the whole description, and scrolls back. No screen-sharing prompt.
+If an app hides its text, P falls back to screen capture + OCR automatically.
+
 ## Install the latest test build
 Open on your phone: https://github.com/mitchelspencer214-bit/poke-deal/releases/download/latest/Poke-Deal-debug.apk
 
@@ -23,4 +29,3 @@ Open on your phone: https://github.com/mitchelspencer214-bit/poke-deal/releases/
 
 ## Not built yet
 - Market price lookup and deal scoring
-- Multi-screen capture for long descriptions

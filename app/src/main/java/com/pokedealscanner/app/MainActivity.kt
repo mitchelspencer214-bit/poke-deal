@@ -70,6 +70,13 @@ class MainActivity : Activity() {
             setOnClickListener { enableFloatingButton() }
         }
 
+        val pageReaderButton = Button(this).apply {
+            text = "Full-Page Reading Settings"
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+
         val stopButton = Button(this).apply {
             text = "Stop Floating Button"
             setOnClickListener {
@@ -109,6 +116,7 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(scanButton)
         root.addView(enableButton)
+        root.addView(pageReaderButton)
         root.addView(stopButton)
         root.addView(status)
         root.addView(resultTitle)
@@ -227,19 +235,26 @@ class MainActivity : Activity() {
 
     private fun updateStatus() {
         if (!::status.isInitialized) return
-        status.text = if (Settings.canDrawOverlays(this)) {
+        val overlay = if (Settings.canDrawOverlays(this)) {
             "Floating button permission is enabled."
         } else {
             "Enable overlay permission to use the floating button."
         }
+        val pageReader = if (PageReaderService.isEnabledInSettings(this)) {
+            "Full-page reading is ON. Tapping P scrolls and reads the whole listing."
+        } else {
+            "Full-page reading is OFF (P captures one screen). To turn on: Full-Page Reading Settings > Installed apps > Poke Deal > On. " +
+                "If it's greyed out: Settings > Apps > Poke Deal > ⋮ menu > Allow restricted settings, then try again."
+        }
+        status.text = "$overlay\n$pageReader"
     }
 
     private fun refreshLastScan() {
         if (!::scanResult.isInitialized) return
 
-        val prefs = getSharedPreferences(ScreenCaptureService.PREFS_NAME, MODE_PRIVATE)
-        val text = prefs.getString(ScreenCaptureService.PREFS_TEXT, null)
-        val timestamp = prefs.getLong(ScreenCaptureService.PREFS_TIME, 0L)
+        val prefs = getSharedPreferences(ScanResults.PREFS_NAME, MODE_PRIVATE)
+        val text = prefs.getString(ScanResults.PREFS_TEXT, null)
+        val timestamp = prefs.getLong(ScanResults.PREFS_TIME, 0L)
 
         scanResult.text = if (text.isNullOrBlank()) {
             "No scan yet. Open a Marketplace listing and tap the floating P button."

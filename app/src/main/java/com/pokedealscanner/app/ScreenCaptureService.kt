@@ -3,7 +3,6 @@ package com.pokedealscanner.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -92,13 +91,6 @@ class ScreenCaptureService : Service() {
                 FOREGROUND_CHANNEL,
                 "Poke Deal screen scanning",
                 NotificationManager.IMPORTANCE_LOW
-            )
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                RESULT_CHANNEL,
-                "Poke Deal scan results",
-                NotificationManager.IMPORTANCE_DEFAULT
             )
         )
     }
@@ -278,36 +270,7 @@ class ScreenCaptureService : Service() {
     private fun finishWithResult(text: String, headline: String? = null) {
         if (scanFinished) return
         scanFinished = true
-
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-            .putString(PREFS_TEXT, text)
-            .putLong(PREFS_TIME, System.currentTimeMillis())
-            .apply()
-
-        val showResult = Intent(this, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_SHOW_RESULT
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            2202,
-            showResult,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val preview = (headline ?: text.replace('\n', ' ')).take(110)
-        val notification = Notification.Builder(this, RESULT_CHANNEL)
-            .setContentTitle("Poke Deal scan complete")
-            .setContentText(preview)
-            .setStyle(Notification.BigTextStyle().bigText(text.take(2500)))
-            .setSmallIcon(android.R.drawable.ic_menu_search)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        getSystemService(NotificationManager::class.java)
-            .notify(RESULT_NOTIFICATION_ID, notification)
+        ScanResults.publish(this, text, headline)
     }
 
     override fun onDestroy() {
@@ -334,13 +297,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_CODE = "capture_result_code"
         const val EXTRA_RESULT_DATA = "capture_result_data"
 
-        const val PREFS_NAME = "poke_deal_scan"
-        const val PREFS_TEXT = "last_scan_text"
-        const val PREFS_TIME = "last_scan_time"
 
         private const val FOREGROUND_CHANNEL = "poke_deal_capture"
-        private const val RESULT_CHANNEL = "poke_deal_results"
         private const val FOREGROUND_NOTIFICATION_ID = 2001
-        private const val RESULT_NOTIFICATION_ID = 2002
     }
 }
