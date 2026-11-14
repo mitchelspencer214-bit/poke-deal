@@ -25,6 +25,9 @@ import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.pokedealscanner.app.parse.ListingFormatter
+import com.pokedealscanner.app.parse.ListingParser
+import com.pokedealscanner.app.parse.OcrLine
 
 class ScreenCaptureService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -233,14 +236,27 @@ class ScreenCaptureService : Service() {
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             recognizer.process(InputImage.fromBitmap(bitmap, 0))
                 .addOnSuccessListener { result ->
-                    val text = result.text.trim()
-                    finishWithResult(
-                        if (text.isBlank()) {
-                            "No readable text was found on this screen. Try a listing with visible title and description."
-                        } else {
-                            text
+                    val raw = result.text.trim()
+                    if (raw.isBlank()) {
+                        finishWithResult("No readable text was found on this screen. Try a listing with visible title and description.")
+                        return@addOnSuccessListener
+                    }
+                    val lines = result.textBlocks.flatMap { block ->
+                        block.lines.mapNotNull { line ->
+                            val box = line.boundingBox ?: return@mapNotNull null
+                            OcrLine(line.text, box.left, box.top, box.right, box.bottom)
                         }
-                    )
+                    }
+                    try {
+                        val parsed = ListingParser.parse(lines, bitmap.height)
+                        finishWithResult(
+                            text = ListingFormatter.summary(parsed) + "\n\n----- RAW SCREEN TEXT -----\n" + raw,
+                            headline = ListingFormatter.headline(parsed),
+                        )
+                    } catch (e: Exception) {
+                        // Never lose a scan because the parser tripped; show the raw text instead.
+                        finishWithResult("Couldn't organize this listing (${e.localizedMessage}).\n\n$raw")
+                    }
                 }
                 .addOnFailureListener { error ->
                     finishWithResult(
@@ -259,7 +275,7 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun finishWithResult(text: String) {
+    private fun finishWithResult(text: String, headline: String? = null) {
         if (scanFinished) return
         scanFinished = true
 
@@ -280,7 +296,7 @@ class ScreenCaptureService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val preview = text.replace('\n', ' ').take(110)
+        val preview = (headline ?: text.replace('\n', ' ')).take(110)
         val notification = Notification.Builder(this, RESULT_CHANNEL)
             .setContentTitle("Poke Deal scan complete")
             .setContentText(preview)
