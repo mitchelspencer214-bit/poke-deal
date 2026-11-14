@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -42,3 +42,18 @@ jobs:
           name: Poke-Deal-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish phone download link
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE: ${{ github.head_ref || github.ref_name }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk Poke-Deal-debug.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Poke-Deal-debug.apk \
+            --prerelease \
+            --target "$SHA" \
+            --title "Latest test build" \
+            --notes "Built from $SOURCE at ${SHA::7}. Uninstall the old Poke Deal before installing."
