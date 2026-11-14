@@ -13,8 +13,10 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import java.lang.ref.WeakReference
 
 class FloatingButtonService : Service() {
     private var floatingButton: Button? = null
@@ -30,7 +32,7 @@ class FloatingButtonService : Service() {
 
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Poke Deal is running")
-            .setContentText("Tap the floating P button to open your scanner.")
+            .setContentText("Tap the floating P button to scan a listing.")
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setOngoing(true)
             .build()
@@ -46,6 +48,7 @@ class FloatingButtonService : Service() {
         }
 
         showFloatingButton()
+        activeInstance = WeakReference(this)
         return START_STICKY
     }
 
@@ -76,9 +79,10 @@ class FloatingButtonService : Service() {
             }
             setPadding(0, 0, 0, 0)
             setOnClickListener {
-                val openApp = Intent(this@FloatingButtonService, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(openApp)
+                val openScanner = Intent(this@FloatingButtonService, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_SCAN)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(openScanner)
             }
         }
 
@@ -98,7 +102,12 @@ class FloatingButtonService : Service() {
         floatingButton = button
     }
 
+    private fun setButtonVisible(visible: Boolean) {
+        floatingButton?.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
     override fun onDestroy() {
+        if (activeInstance?.get() === this) activeInstance = null
         floatingButton?.let {
             windowManager?.removeView(it)
         }
@@ -111,5 +120,12 @@ class FloatingButtonService : Service() {
     companion object {
         private const val CHANNEL_ID = "poke_deal_scanner"
         private const val NOTIFICATION_ID = 1001
+
+        private var activeInstance: WeakReference<FloatingButtonService>? = null
+
+        /** Hides the P button so it doesn't end up in the screenshot. Call on the main thread. */
+        fun setVisible(visible: Boolean) {
+            activeInstance?.get()?.setButtonVisible(visible)
+        }
     }
 }
