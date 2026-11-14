@@ -208,4 +208,22 @@ class ListingParserTest {
         assertFalse(ListingFormatter.summary(p).contains('—'))
         assertNotNull(ListingFormatter.headline(p))
     }
+
+    @Test fun mitchsDeltaReignScan() {
+        val lines = listOf(OcrLine("3:43", 40, 20, 140, 70), OcrLine("J 98", 900, 20, 1060, 70)) + screen(
+            "X", "Poku", "TRADING CARU BAME", "AMEEA EVOLITIANS", "DELTA", "REIGN",
+            "Pokemon TCG Delta Reign Booster Box", "$200", "Message seller", "Description",
+            "Is this still available?", "Send", "Sealed Pokemon Tradina Card Game booster box",
+        )
+        val p = ListingParser.parse(lines, H)
+        println(ListingFormatter.summary(p))
+        assertEquals("Pokemon TCG Delta Reign Booster Box", p.title)
+        assertEquals(200.0, p.mainPrice!!.amount, 0.001)
+        assertEquals(MainPriceMeaning.TITLE_ITEM, p.mainPriceMeaning)
+        assertEquals("Booster Box", p.titleProduct)
+        assertEquals(listOf("Delta Reign"), p.setsMentioned)
+        assertEquals(0, p.items.size)
+        assertFalse(p.sponsored)
+        assertTrue(p.warnings.isEmpty())
+    }
 }

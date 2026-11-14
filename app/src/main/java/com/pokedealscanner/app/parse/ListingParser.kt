@@ -200,6 +200,10 @@ object ListingParser {
 
         // 6. Context.
         val titleItem = title?.let { parseItem(it) }
+        // A lone unpriced line describing the same product as the title is just the description.
+        if (items.size == 1 && items[0].price == null && titleItem?.product != null && items[0].product == titleItem.product) {
+            notes.add(0, items.removeAt(0).raw)
+        }
         val titleProduct = titleItem?.product
         val sets = findSets(allText)
 
@@ -338,6 +342,8 @@ object ListingParser {
             while (i >= 0 && parts.size < 2) {
                 val l = lines[i]
                 if (isNoise(l.text) || isStandalonePrice(texts[i])) break
+                if (parts.isNotEmpty() && isBoxArtFragment(l.text)) break
+                if (parts.isEmpty() && isBoxArtFragment(l.text)) { i--; continue }
                 val anchor = parts.lastOrNull() ?: lines[priceIdx]
                 val height = max(1, l.bottom - l.top)
                 if (anchor.top - l.bottom > height * 1.3) break
