@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -12,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -21,7 +24,12 @@ import java.util.Date
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var scanResult: TextView
+    private lateinit var setupBox: LinearLayout
+    private lateinit var setupToggle: TextView
+    private lateinit var setupHelp: TextView
+    private lateinit var readerLog: TextView
+    private lateinit var resultContainer: LinearLayout
+    private var setupOpenedByUser = false
     private var pendingScanAfterNotification = false
     private var scanRequestInProgress = false
 
@@ -37,99 +45,99 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
     private fun buildScreen() {
-        val root = LinearLayout(this).apply {
+        val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(28, 40, 28, 24)
-            setBackgroundColor(Color.rgb(245, 247, 250))
+            setPadding(dp(16), dp(20), dp(16), dp(24))
         }
 
-        val title = TextView(this).apply {
+        // Header
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
             text = "POKE DEAL"
-            textSize = 30f
-            setTextColor(Color.rgb(35, 94, 160))
-            gravity = Gravity.CENTER
-        }
-
-        val subtitle = TextView(this).apply {
-            text = "Your Pokémon marketplace scanner"
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 22)
-        }
-
-        val scanButton = Button(this).apply {
-            text = "Capture Screen & Read Listing"
-            setOnClickListener { startScanFlow() }
-        }
-
-        val enableButton = Button(this).apply {
-            text = "Enable Floating P Button"
-            setOnClickListener { enableFloatingButton() }
-        }
-
-        val pageReaderButton = Button(this).apply {
-            text = "Full-Page Reading Settings"
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ResultRenderer.BRAND)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        setupToggle = TextView(this).apply {
+            text = "⚙ Setup"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ResultRenderer.BRAND)
+            setPadding(dp(12), dp(8), 0, dp(8))
             setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                setupOpenedByUser = setupBox.visibility != View.VISIBLE
+                setupBox.visibility = if (setupOpenedByUser) View.VISIBLE else View.GONE
             }
         }
+        header.addView(setupToggle)
+        column.addView(header)
 
-        val stopButton = Button(this).apply {
+        status = TextView(this).apply {
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(4), 0, dp(12))
+        }
+        column.addView(status)
+
+        // Setup (folds away once everything is on)
+        setupBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), ResultRenderer.BORDER)
+            }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) }
+        }
+        setupHelp = TextView(this).apply {
+            textSize = 13f
+            setTextColor(ResultRenderer.MUTED)
+            setPadding(0, 0, 0, dp(8))
+        }
+        setupBox.addView(setupHelp)
+        setupBox.addView(Button(this).apply {
+            text = "Enable Floating P Button"
+            setOnClickListener { enableFloatingButton() }
+        })
+        setupBox.addView(Button(this).apply {
+            text = "Full-Page Reading Settings"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        setupBox.addView(Button(this).apply {
+            text = "Capture Screen & Read Listing"
+            setOnClickListener { startScanFlow() }
+        })
+        setupBox.addView(Button(this).apply {
             text = "Stop Floating Button"
             setOnClickListener {
                 stopService(Intent(this@MainActivity, FloatingButtonService::class.java))
                 status.text = "Floating button stopped."
             }
-        }
-
-        status = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
-            setPadding(0, 14, 0, 14)
-        }
-
-        val resultTitle = TextView(this).apply {
-            text = "LAST SCAN"
-            textSize = 18f
-            setTextColor(Color.rgb(35, 94, 160))
-            setPadding(0, 14, 0, 8)
-        }
-
-        scanResult = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
+        })
+        readerLog = TextView(this).apply {
+            textSize = 11f
+            setTextColor(ResultRenderer.MUTED)
             setTextIsSelectable(true)
-            setPadding(12, 12, 12, 12)
-            setBackgroundColor(Color.WHITE)
-            text = "No scan yet. Open a Marketplace listing and tap the floating P button."
+            setPadding(0, dp(8), 0, 0)
         }
+        setupBox.addView(readerLog)
+        column.addView(setupBox)
 
-        val resultScroll = ScrollView(this).apply {
-            addView(scanResult)
-        }
+        resultContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(resultContainer)
 
-        root.addView(title)
-        root.addView(subtitle)
-        root.addView(scanButton)
-        root.addView(enableButton)
-        root.addView(pageReaderButton)
-        root.addView(stopButton)
-        root.addView(status)
-        root.addView(resultTitle)
-        root.addView(
-            resultScroll,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
-
-        setContentView(root)
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(Color.rgb(245, 247, 250))
+            isFillViewport = true
+            addView(column)
+        })
     }
 
     private fun startScanFlow() {
@@ -235,42 +243,53 @@ class MainActivity : Activity() {
 
     private fun updateStatus() {
         if (!::status.isInitialized) return
-        val overlay = if (Settings.canDrawOverlays(this)) {
-            "Floating button permission is enabled."
-        } else {
-            "Enable overlay permission to use the floating button."
+        val overlayOn = Settings.canDrawOverlays(this)
+        val readerOn = PageReaderService.isEnabledInSettings(this)
+        val readerConnected = readerOn && PageReaderService.isActive
+        val ready = overlayOn && readerConnected
+
+        status.text = when {
+            ready -> "● Ready. Open a listing and tap P."
+            !overlayOn -> "● Setup needed: allow the floating P button."
+            readerOn -> "● Full-page reading isn't connected. Turn it off and on again."
+            else -> "● Full-page reading is off. P will only capture one screen."
         }
-        val pageReader = if (PageReaderService.isEnabledInSettings(this) && PageReaderService.isActive) {
-            "Full-page reading is ON. Tapping P scrolls and reads the whole listing."
-        } else if (PageReaderService.isEnabledInSettings(this)) {
-            "Full-page reading is ON in settings but not connected. Turn it off and on again in Full-Page Reading Settings."
-        } else {
-            "Full-page reading is OFF (P captures one screen). To turn on: Full-Page Reading Settings > Installed apps > Poke Deal > On. " +
-                "If it's greyed out: Settings > Apps > Poke Deal > ⋮ menu > Allow restricted settings, then try again."
+        status.setTextColor(if (ready) Color.rgb(24, 128, 56) else ResultRenderer.WARN_INK)
+
+        setupHelp.text = buildString {
+            append(if (overlayOn) "✓ Floating P button allowed\n" else "✗ Floating P button: tap Enable Floating P Button\n")
+            append(
+                when {
+                    readerConnected -> "✓ Full-page reading on"
+                    readerOn -> "✗ Full-page reading on but not connected: turn it off and on in Full-Page Reading Settings"
+                    else -> "✗ Full-page reading off: Full-Page Reading Settings > Installed apps > Poke Deal > On. " +
+                        "If greyed out: Settings > Apps > Poke Deal > ⋮ > Allow restricted settings"
+                }
+            )
         }
-        status.text = "$overlay\n$pageReader"
+        if (!setupOpenedByUser) setupBox.visibility = if (ready) View.GONE else View.VISIBLE
     }
 
     private fun refreshLastScan() {
-        if (!::scanResult.isInitialized) return
+        if (!::resultContainer.isInitialized) return
 
         val prefs = getSharedPreferences(ScanResults.PREFS_NAME, MODE_PRIVATE)
         val text = prefs.getString(ScanResults.PREFS_TEXT, null)
+        val json = prefs.getString(ScanResults.PREFS_JSON, null)
         val timestamp = prefs.getLong(ScanResults.PREFS_TIME, 0L)
+        val scannedAt = if (timestamp > 0L) "Scanned " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(timestamp)) else ""
 
-        scanResult.text = if (text.isNullOrBlank()) {
-            "No scan yet. Open a Marketplace listing and tap the floating P button."
-        } else {
-            val date = if (timestamp > 0L) {
-                DateFormat.getDateTimeInstance().format(Date(timestamp))
-            } else {
-                "Unknown time"
-            }
-            "Scanned $date\n\n$text"
+        readerLog.text = prefs.getString(ScanResults.PREFS_READER_LOG, null)?.let { "Last full-page read: $it" } ?: ""
+
+        resultContainer.removeAllViews()
+        val renderer = ResultRenderer(this)
+        val view = when {
+            json != null -> runCatching { renderer.render(json, scannedAt) }.getOrNull()
+                ?: renderer.renderPlain(text.orEmpty(), scannedAt)
+            !text.isNullOrBlank() -> renderer.renderPlain(text, scannedAt)
+            else -> renderer.renderPlain("No scan yet. Open a Marketplace listing and tap the floating P button.", "")
         }
-        prefs.getString(ScanResults.PREFS_READER_LOG, null)?.let {
-            scanResult.text = "FULL-PAGE READER: $it\n\n" + scanResult.text
-        }
+        resultContainer.addView(view)
     }
 
     override fun onNewIntent(intent: Intent) {

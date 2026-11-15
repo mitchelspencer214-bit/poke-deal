@@ -25,6 +25,7 @@ object ScanPipeline {
                 context,
                 ListingFormatter.summary(parsed, check) + "\n\n----- $rawLabel -----\n" + rawText,
                 ListingFormatter.headline(parsed, check),
+                runCatching { ResultJson.build(parsed, check, rawLabel, rawText) }.getOrNull(),
             )
         } catch (e: Exception) {
             ScanResults.publish(context, "Couldn't organize this listing (${e.localizedMessage}).\n\n$rawText")
