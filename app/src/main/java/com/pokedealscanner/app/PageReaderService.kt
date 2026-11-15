@@ -71,7 +71,8 @@ class PageReaderService : AccessibilityService() {
             ScanResults.logReader(
                 this,
                 lastProblem ?: "Read ${lines?.size ?: 0} text items from $lastPackage, not enough for a listing. " +
-                    "Used screen capture. First items: ${lines.orEmpty().take(12).joinToString(" | ") { it.text.take(40) }}",
+                    "Used screen capture. First items: ${lines.orEmpty().take(12).joinToString(" | ") { it.text.take(40) }}" +
+                    "\n\nDEBUG $lastDump",
             )
             // This app hides its text. Fall back to screen capture + OCR.
             startActivity(
@@ -81,7 +82,7 @@ class PageReaderService : AccessibilityService() {
             )
             return
         }
-        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.")
+        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.\n\nDEBUG $lastDump")
         val pageText = lines.joinToString("\n") { it.text }
         try {
             val parsed = ListingParser.parse(lines, 0)
@@ -103,6 +104,7 @@ class PageReaderService : AccessibilityService() {
     @Volatile private var lastPages = 0
     @Volatile private var lastSeeMore = false
     @Volatile private var lastTrail = ""
+    @Volatile private var lastDump = ""
 
     /** The app window under the P button (Facebook), never our own overlay. */
     private fun targetRoot(): AccessibilityNodeInfo? {
@@ -121,13 +123,14 @@ class PageReaderService : AccessibilityService() {
     }
 
     private fun readPage(): List<OcrLine>? {
-        lastProblem = null; lastPages = 0; lastSeeMore = false; lastTrail = ""
+        lastProblem = null; lastPages = 0; lastSeeMore = false; lastTrail = ""; lastDump = ""
         val first = targetRoot()
         if (first == null) {
             lastProblem = "Couldn't see the app behind the P button (Android returned no window). Used screen capture."
             return null
         }
         lastPackage = first.packageName?.toString() ?: "?"
+        lastDump = try { dumpAroundDescription(first) } catch (e: Exception) { "dump failed: ${e.message}" }
 
         val pages = mutableListOf<List<OcrLine>>()
         val moves = mutableListOf<Boolean>() // true = finger swipe, false = scroll command
@@ -200,16 +203,18 @@ class PageReaderService : AccessibilityService() {
         stack.addLast(root)
         val bounds = Rect()
 
+        val m = resources.displayMetrics
+        val screen = Rect(0, 0, m.widthPixels, m.heightPixels + 400)
+
         while (stack.isNotEmpty()) {
             val node = stack.removeLast()
-            if (!node.isVisibleToUser) continue
+            // Keep walking hidden containers: Facebook sometimes marks a parent hidden while its text is on screen.
             for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it) }
 
-            val text = node.text?.toString()?.takeIf { it.isNotBlank() }
-                ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() && !isImageDescription(it) }
-                ?: continue
+            val text = nodeText(node) ?: continue
 
             node.getBoundsInScreen(bounds)
+            if (!node.isVisibleToUser && (bounds.height() <= 0 || !Rect.intersects(bounds, screen))) continue
             val parts = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
             val lineHeight = ((bounds.height()) / parts.size.coerceAtLeast(1)).coerceAtLeast(1)
             parts.forEachIndexed { i, part ->
@@ -221,6 +226,42 @@ class PageReaderService : AccessibilityService() {
         // A container's label often repeats all of its children's text in one long line. Drop those.
         return out.filter { line ->
             line.text.length < 40 || out.count { other -> other !== line && other.text.length >= 3 && line.text.contains(other.text) } < 2
+        }
+    }
+
+    private fun nodeText(node: AccessibilityNodeInfo): String? =
+        node.text?.toString()?.takeIf { it.isNotBlank() }
+            ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() && !isImageDescription(it) }
+            ?: (if (android.os.Build.VERSION.SDK_INT >= 30) node.stateDescription?.toString()?.takeIf { it.isNotBlank() } else null)
+            ?: (if (android.os.Build.VERSION.SDK_INT >= 26) node.hintText?.toString()?.takeIf { it.isNotBlank() } else null)
+
+    /**
+     * Debug: every node near the "Description" heading, hidden or not, so we can see
+     * where Facebook keeps the description text.
+     */
+    private fun dumpAroundDescription(root: AccessibilityNodeInfo): String {
+        data class Entry(val depth: Int, val cls: String, val visible: Boolean, val top: Int, val h: Int, val text: String?, val desc: String?, val kids: Int, val click: Boolean)
+        val entries = mutableListOf<Entry>()
+        val stack = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+        stack.addLast(root to 0)
+        val r = Rect()
+        var total = 0
+        while (stack.isNotEmpty() && total < 3000) {
+            val (node, depth) = stack.removeLast()
+            total++
+            for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it to depth + 1) }
+            node.getBoundsInScreen(r)
+            entries += Entry(
+                depth, node.className?.toString()?.substringAfterLast('.') ?: "?", node.isVisibleToUser, r.top, r.height(),
+                node.text?.toString()?.take(60), node.contentDescription?.toString()?.take(60), node.childCount, node.isClickable,
+            )
+        }
+        val idx = entries.indexOfFirst { (it.text ?: it.desc)?.trim().equals("Description", ignoreCase = true) }
+        if (idx < 0) return "nodes=$total; no \"Description\" node found"
+        val window = entries.subList(maxOf(0, idx - 2), minOf(entries.size, idx + 18))
+        return "nodes=$total; around Description: " + window.joinToString(" / ") { e ->
+            "${"-".repeat(minOf(e.depth, 30) / 3)}${e.cls}${if (e.visible) "" else " HIDDEN"} y=${e.top} h=${e.h} k=${e.kids}" +
+                (e.text?.let { " t='$it'" } ?: "") + (e.desc?.let { " d='$it'" } ?: "") + (if (e.click) " click" else "")
         }
     }
 
