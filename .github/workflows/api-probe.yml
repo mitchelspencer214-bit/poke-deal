@@ -14,26 +14,31 @@ jobs:
         run: |
           set +e
           {
-            echo "## pokemontcg.io (no key)"
-            curl -s -m 25 -o p1.json -w "HTTP %{http_code} in %{time_total}s\n" 'https://api.pokemontcg.io/v2/cards?q=name:%22charizard%20ex%22%20set.name:%22obsidian%20flames%22&select=name,number,rarity,set,tcgplayer&pageSize=5'
-            jq -c '.data[]? | {name, number, rarity, set: .set.name, upd: .tcgplayer.updatedAt, prices: .tcgplayer.prices}' p1.json | head -5
+            echo "## filter by name + set id (Obsidian Flames = sv03)"
+            curl -s -m 25 -D h.txt 'https://api.tcgdex.net/v2/en/cards?name=eq:Charizard%20ex&set.id=eq:sv03' | jq -c '[.[]? | {id, name}]'
+            grep -i -E "ratelimit|cache-control|x-" h.txt | head -8
             echo
-            echo "## pokemontcg.io newest set check"
-            curl -s -m 25 'https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=5&select=name,releaseDate' | jq -c '.data[]?'
+            echo "## name like (no eq)"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/cards?name=moonbreon' | jq -c '[.[]? | .id] | .[:5]'
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/cards?name=Umbreon%20VMAX&set.id=eq:swsh7' | jq -c '[.[]? | {id, name}]'
             echo
-            echo "## TCGdex search"
-            curl -s -m 25 -o t1.json -w "HTTP %{http_code} in %{time_total}s\n" 'https://api.tcgdex.net/v2/en/cards?name=eq:Charizard%20ex'
-            jq -c '.[]? | {id, name}' t1.json | head -8
+            echo "## SIR detail sv03-223"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/cards/sv03-223' | jq -c '{id, name, rarity, variants, pricing: .pricing.tcgplayer}'
+            echo "## Umbreon VMAX alt swsh7-215"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/cards/swsh7-215' | jq -c '{id, name, rarity, pricing: .pricing.tcgplayer}'
             echo
-            echo "## TCGdex card detail (first result)"
-            id=$(jq -r '.[0].id' t1.json)
-            curl -s -m 25 "https://api.tcgdex.net/v2/en/cards/$id" | jq -c '{id, name, rarity, set: .set.name, pricing: .pricing.tcgplayer}'
+            echo "## Delta Reign set: count + rarities + one priced card"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets/me06' > s.json
+            jq -c '{name, cardCount, serie: .serie.name, first: [.cards[:3][] | .id]}' s.json
+            last=$(jq -r '.cards[-1].id' s.json)
+            curl -s -m 25 "https://api.tcgdex.net/v2/en/cards/$last" | jq -c '{id, name, rarity, pricing: .pricing.tcgplayer}'
             echo
-            echo "## TCGdex newest sets"
-            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets' | jq -c '.[-6:][] | {id, name}'
-            echo
-            echo "## TCGdex Delta Reign / Phantasmal Flames set lookup"
-            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets?name=Phantasmal' | jq -c '.[]? | {id, name}'
+            echo "## sets list size + sample fields"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets' | jq -c 'length, .[0], (.[] | select(.id|test("^A")) | .id)' | head -6
+            echo "## series list"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/series' | jq -c '[.[] | .id + "=" + .name]'
+            echo "## sealed? search Elite Trainer"
+            curl -s -m 25 -o x.json -w "HTTP %{http_code}\n" 'https://api.tcgdex.net/v2/en/sealed'; head -c 300 x.json; echo
           } > out.txt 2>&1
           cat out.txt
           gh release delete api-probe --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
