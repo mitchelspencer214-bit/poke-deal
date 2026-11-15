@@ -502,7 +502,8 @@ object ListingParser {
             if (name in found) continue
             val target = name.filter { it.isLetter() }.uppercase()
             // Don't fuzzy-match a set that's just a near-spelling of one already found ("30th Celebration" vs "Celebrations").
-            if (found.any { f -> f.filter { it.isLetter() }.uppercase().let { fl -> fl.contains(target) || target.contains(fl) || similarity(fl, target) >= 0.8 } }) continue
+            val nameWords = keyWords(name)
+            if (found.any { f -> keyWords(f).any { it in nameWords } }) continue
             if (target.length < 8) continue
             val k = name.split(" ").count { it.any(Char::isLetter) }
             for (size in setOf(k, k + 1, max(1, k - 1))) {
@@ -516,6 +517,10 @@ object ListingParser {
         }
         return found.toList()
     }
+
+    /** Long words of a set name, singular, for spotting near-duplicates ("Celebration" vs "Celebrations"). */
+    private fun keyWords(name: String): Set<String> =
+        name.split(" ").map { w -> w.filter { it.isLetter() }.uppercase().trimEnd('S') }.filter { it.length >= 6 }.toSet()
 
     fun similarity(a: String, b: String): Double {
         if (a.isEmpty() || b.isEmpty()) return 0.0
