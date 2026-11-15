@@ -95,10 +95,11 @@ object ListingParser {
         "today's picks", "hide listing", "see translation", "description", "see less",
         "about this item", "marketplace", "condition", "view seller profile",
         "message seller", "like", "follow", "send offer", "make offer", "see all",
-        "close", "navigate to search", "more actions", "back", "search", "options",
+        "close", "navigate to search", "more actions", "back", "search", "options", "see less",
     )
 
     private val DESCRIPTION_STOP = listOf(
+        "seller ", 
         "seller information", "seller details", "location is approximate",
         "today's picks", "similar items", "related listings", "send seller a message",
         "more from this seller", "sponsored", "if you don't like this",
@@ -250,6 +251,7 @@ object ListingParser {
     // ---------- Text cleanup ----------
 
     private fun clean(s: String): String = s
+        .replace("\uFFFC", "")
         .replace('’', '\'').replace('‘', '\'').replace('“', '"').replace('”', '"')
         .replace(Regex("""\s+"""), " ")
         .trim()
@@ -499,6 +501,8 @@ object ListingParser {
         for (name in PokemonCatalog.SETS.keys) {
             if (name in found) continue
             val target = name.filter { it.isLetter() }.uppercase()
+            // Don't fuzzy-match a set that's just a near-spelling of one already found ("30th Celebration" vs "Celebrations").
+            if (found.any { f -> f.filter { it.isLetter() }.uppercase().let { fl -> fl.contains(target) || target.contains(fl) || similarity(fl, target) >= 0.8 } }) continue
             if (target.length < 8) continue
             val k = name.split(" ").count { it.any(Char::isLetter) }
             for (size in setOf(k, k + 1, max(1, k - 1))) {

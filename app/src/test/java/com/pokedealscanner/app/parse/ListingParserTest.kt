@@ -242,4 +242,28 @@ class ListingParserTest {
         assertTrue(p.mainPriceReason!!.contains("trade"))
         assertEquals(1, p.items.size)
     }
+
+    @Test fun mitchsTradePostFullTree() {
+        // Reading order straight from Facebook's view tree (v0.7 debug), description included.
+        val p = ListingParser.parse(
+            screen(
+                "Close", "Navigate to Search", "More actions", "Product Image,1 of 1", "LOOKING FOR TRADE", "Free",
+                "Just listed · 15 hours ago", "Save", "Share", "Message seller", "Send", "Is this still available?",
+                "Description", "See less",
+                "Looking for trade. Preferably Slabs or 30th Celebration. Open to offers",
+                "Have Moonbreon PSA 9",
+                "Prismatic ETB x2",
+            ),
+            0,
+        )
+        println(ListingFormatter.summary(p))
+        assertEquals("LOOKING FOR TRADE", p.title)
+        assertTrue(p.descriptionFound)
+        assertFalse(p.descriptionTruncated)
+        assertTrue(p.setsMentioned.toString(), "30th Celebration" in p.setsMentioned)
+        assertFalse(p.setsMentioned.toString(), "Celebrations" in p.setsMentioned)
+        assertEquals(3, p.items.size)
+        assertEquals("PSA 9", p.items[1].grade)
+        assertEquals(2, p.items[2].quantity)
+    }
 }

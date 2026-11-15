@@ -82,7 +82,7 @@ class PageReaderService : AccessibilityService() {
             )
             return
         }
-        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.\n\nDEBUG $lastDump")
+        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.")
         val pageText = lines.joinToString("\n") { it.text }
         try {
             val parsed = ListingParser.parse(lines, 0)
@@ -174,7 +174,7 @@ class PageReaderService : AccessibilityService() {
             lastPages = pages.size
             trail += "screen ${pages.size}: ${lines.size} items"
 
-            if (pastDescription(lines)) { trail += "passed the description"; break }
+            if (pastDescription(root)) { trail += "whole listing was readable without scrolling"; break }
 
             val moved = if (useSwipe) swipe(forward = true) else scrollCommand(root, forward = true)
             if (!moved) {
@@ -196,37 +196,43 @@ class PageReaderService : AccessibilityService() {
         return PageMerger.merge(pages)
     }
 
+    /**
+     * Reads every text in the app's view tree in reading order, including parts
+     * scrolled off screen. Facebook keeps the whole listing in the tree and only
+     * marks the off-screen part hidden, so no scrolling is needed there.
+     * Positions are the reading order (one row per line), not pixels.
+     */
     private fun collect(root: AccessibilityNodeInfo): List<OcrLine> {
         val out = mutableListOf<OcrLine>()
-        val seen = HashSet<String>()
         val stack = ArrayDeque<AccessibilityNodeInfo>()
         stack.addLast(root)
-        val bounds = Rect()
+        var row = 0
+        var guard = 0
 
-        val m = resources.displayMetrics
-        val screen = Rect(0, 0, m.widthPixels, m.heightPixels + 400)
-
-        while (stack.isNotEmpty()) {
+        while (stack.isNotEmpty() && guard++ < 5000) {
             val node = stack.removeLast()
-            // Keep walking hidden containers: Facebook sometimes marks a parent hidden while its text is on screen.
             for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it) }
 
             val text = nodeText(node) ?: continue
-
-            node.getBoundsInScreen(bounds)
-            if (!node.isVisibleToUser && (bounds.height() <= 0 || !Rect.intersects(bounds, screen))) continue
-            val parts = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
-            val lineHeight = ((bounds.height()) / parts.size.coerceAtLeast(1)).coerceAtLeast(1)
-            parts.forEachIndexed { i, part ->
-                val top = bounds.top + i * lineHeight
-                val key = "$part@$top"
-                if (seen.add(key)) out += OcrLine(part, bounds.left, top, bounds.right, top + lineHeight)
+            for (part in text.split('\n').map { it.replace("\uFFFC", "").trim() }.filter { it.isNotEmpty() }) {
+                if (out.lastOrNull()?.text == part) continue // a label and its own text
+                val top = row * ROW
+                row++
+                out += OcrLine(part, 30, top, 1000, top + ROW - 10)
             }
         }
         // A container's label often repeats all of its children's text in one long line. Drop those.
-        return out.filter { line ->
+        val cleaned = out.filter { line ->
             line.text.length < 40 || out.count { other -> other !== line && other.text.length >= 3 && line.text.contains(other.text) } < 2
         }
+        // Stop at the seller section: below it are other people's listings and ads.
+        val end = cleaned.indexOfFirst { isEndMarker(it.text) }
+        return if (end > 0) cleaned.subList(0, end) else cleaned
+    }
+
+    private fun isEndMarker(text: String): Boolean {
+        val t = text.lowercase().trim()
+        return t == "seller" || END_MARKERS.any { t.startsWith(it) }
     }
 
     private fun nodeText(node: AccessibilityNodeInfo): String? =
@@ -285,8 +291,18 @@ class PageReaderService : AccessibilityService() {
         return false
     }
 
-    private fun pastDescription(lines: List<OcrLine>): Boolean =
-        lines.any { l -> val t = l.text.lowercase(); END_MARKERS.any { t.startsWith(it) } }
+    /** True when the tree we read already reaches the seller section (whole description is in hand). */
+    private fun pastDescription(root: AccessibilityNodeInfo): Boolean {
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        var guard = 0
+        while (stack.isNotEmpty() && guard++ < 5000) {
+            val node = stack.removeLast()
+            nodeText(node)?.let { if (isEndMarker(it.replace("\uFFFC", ""))) return true }
+            for (i in 0 until node.childCount) node.getChild(i)?.let { stack.addLast(it) }
+        }
+        return false
+    }
 
     private fun scrollCommand(root: AccessibilityNodeInfo, forward: Boolean): Boolean {
         val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
@@ -340,6 +356,7 @@ class PageReaderService : AccessibilityService() {
         private const val MAX_PAGES = 8
         private const val SETTLE_MS = 650L
         private const val SWIPE_SETTLE_MS = 900L
+        private const val ROW = 60
 
         private val END_MARKERS = listOf(
             "seller information", "seller details", "today's picks", "location is approximate",
