@@ -24,8 +24,6 @@ import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.pokedealscanner.app.parse.ListingFormatter
-import com.pokedealscanner.app.parse.ListingParser
 import com.pokedealscanner.app.parse.OcrLine
 
 class ScreenCaptureService : Service() {
@@ -36,6 +34,7 @@ class ScreenCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private var captured = false
     private var scanFinished = false
+    @Volatile private var pricingInProgress = false
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -239,16 +238,15 @@ class ScreenCaptureService : Service() {
                             OcrLine(line.text, box.left, box.top, box.right, box.bottom)
                         }
                     }
-                    try {
-                        val parsed = ListingParser.parse(lines, bitmap.height)
-                        finishWithResult(
-                            text = ListingFormatter.summary(parsed) + "\n\n----- RAW SCREEN TEXT -----\n" + raw,
-                            headline = ListingFormatter.headline(parsed),
-                        )
-                    } catch (e: Exception) {
-                        // Never lose a scan because the parser tripped; show the raw text instead.
-                        finishWithResult("Couldn't organize this listing (${e.localizedMessage}).\n\n$raw")
-                    }
+                    // Price lookups use the network: do them off the main thread, and keep
+                    // this service alive until they're done.
+                    scanFinished = true
+                    pricingInProgress = true
+                    val height = bitmap.height
+                    Thread {
+                        ScanPipeline.process(this, lines, height, "RAW SCREEN TEXT", raw)
+                        handler.post { stopSelf() }
+                    }.start()
                 }
                 .addOnFailureListener { error ->
                     finishWithResult(
@@ -258,7 +256,7 @@ class ScreenCaptureService : Service() {
                 .addOnCompleteListener {
                     recognizer.close()
                     if (!bitmap.isRecycled) bitmap.recycle()
-                    stopSelf()
+                    if (!pricingInProgress) stopSelf()
                 }
         } catch (e: Exception) {
             if (!bitmap.isRecycled) bitmap.recycle()
