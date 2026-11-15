@@ -81,6 +81,13 @@ class FloatingButtonService : Service() {
             setOnClickListener {
                 // Full-page reading if it's turned on; otherwise screen capture.
                 if (PageReaderService.scan()) return@setOnClickListener
+                ScanResults.logReader(
+                    this@FloatingButtonService,
+                    if (PageReaderService.isEnabledInSettings(this@FloatingButtonService))
+                        "Full-page reading is ON in settings but Android hasn't connected it. Turn it off and on again in Accessibility settings. Used screen capture."
+                    else
+                        "Full-page reading is OFF in Accessibility settings. Used screen capture."
+                )
                 val openScanner = Intent(this@FloatingButtonService, MainActivity::class.java)
                     .setAction(MainActivity.ACTION_SCAN)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

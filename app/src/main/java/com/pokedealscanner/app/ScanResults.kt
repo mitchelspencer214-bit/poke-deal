@@ -12,6 +12,15 @@ object ScanResults {
     const val PREFS_NAME = "poke_deal_scan"
     const val PREFS_TEXT = "last_scan_text"
     const val PREFS_TIME = "last_scan_time"
+    const val PREFS_READER_LOG = "last_reader_log"
+
+    /** Why full-page reading did or didn't work on the last tap. Shown under Last Scan. */
+    fun logReader(context: Context, message: String) {
+        val stamp = java.text.DateFormat.getTimeInstance().format(java.util.Date())
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(PREFS_READER_LOG, "$stamp: $message")
+            .apply()
+    }
 
     private const val RESULT_CHANNEL = "poke_deal_results"
     private const val RESULT_NOTIFICATION_ID = 2002

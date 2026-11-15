@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.pokedealscanner.app.parse.ListingFormatter
 import com.pokedealscanner.app.parse.ListingParser
 import com.pokedealscanner.app.parse.OcrLine
@@ -67,6 +68,11 @@ class PageReaderService : AccessibilityService() {
     private fun handle(lines: List<OcrLine>?) {
         val usable = lines != null && lines.size >= 3 && lines.any { it.text.contains('$') || it.text.length > 25 }
         if (!usable) {
+            ScanResults.logReader(
+                this,
+                lastProblem ?: "Read ${lines?.size ?: 0} text items from $lastPackage, not enough for a listing. " +
+                    "Used screen capture. First items: ${lines.orEmpty().take(12).joinToString(" | ") { it.text.take(40) }}",
+            )
             // This app hides its text. Fall back to screen capture + OCR.
             startActivity(
                 Intent(this, MainActivity::class.java)
@@ -75,7 +81,8 @@ class PageReaderService : AccessibilityService() {
             )
             return
         }
-        val pageText = lines!!.joinToString("\n") { it.text }
+        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s)${if (lastSeeMore) ", tapped See more" else ""}.")
+        val pageText = lines.joinToString("\n") { it.text }
         try {
             val parsed = ListingParser.parse(lines, 0)
             ScanResults.publish(
@@ -91,9 +98,35 @@ class PageReaderService : AccessibilityService() {
     // ---------- Reading ----------
 
     /** Runs on a worker thread. */
+    @Volatile private var lastProblem: String? = null
+    @Volatile private var lastPackage: String = "?"
+    @Volatile private var lastPages = 0
+    @Volatile private var lastSeeMore = false
+
+    /** The app window under the P button (Facebook), never our own overlay. */
+    private fun targetRoot(): AccessibilityNodeInfo? {
+        val candidates = try {
+            windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                .mapNotNull { w -> w.root?.let { r -> w to r } }
+                .filter { (_, r) -> r.packageName?.toString() != packageName }
+        } catch (_: Exception) { emptyList() }
+        val rect = Rect()
+        val best = candidates.maxByOrNull { (w, _) ->
+            w.getBoundsInScreen(rect)
+            (if (w.isActive || w.isFocused) 1_000_000_000L else 0L) + rect.width().toLong() * rect.height()
+        }?.second
+        if (best != null) return best
+        return rootInActiveWindow?.takeIf { it.packageName?.toString() != packageName }
+    }
+
     private fun readPage(): List<OcrLine>? {
-        val first = rootInActiveWindow ?: return null
-        if (first.packageName?.toString() == packageName) return null
+        lastProblem = null; lastPages = 0; lastSeeMore = false
+        val first = targetRoot()
+        if (first == null) {
+            lastProblem = "Couldn't see the app behind the P button (Android returned no window). Used screen capture."
+            return null
+        }
+        lastPackage = first.packageName?.toString() ?: "?"
 
         val pages = mutableListOf<List<OcrLine>>()
         var scrolls = 0
@@ -103,19 +136,21 @@ class PageReaderService : AccessibilityService() {
         var step = 0
         while (step < MAX_PAGES) {
             step++
-            val root = rootInActiveWindow ?: break
+            val root = targetRoot() ?: break
             val lines = collect(root)
 
             if (!clickedSeeMore) {
                 val seeMore = findSeeMore(root)
                 if (seeMore != null && click(seeMore)) {
                     clickedSeeMore = true
+                    lastSeeMore = true
                     Thread.sleep(SETTLE_MS)
                     continue
                 }
             }
 
             pages += lines
+            lastPages = pages.size
             val signature = lines.joinToString("|") { it.text }
             if (signature == lastSignature) break // didn't move: bottom of page
             lastSignature = signature
@@ -128,7 +163,7 @@ class PageReaderService : AccessibilityService() {
 
         // Put the user back where they started.
         repeat(scrolls) {
-            rootInActiveWindow?.let { scroll(it, forward = false) }
+            targetRoot()?.let { scroll(it, forward = false) }
             Thread.sleep(250)
         }
 
@@ -148,7 +183,7 @@ class PageReaderService : AccessibilityService() {
             for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it) }
 
             val text = node.text?.toString()?.takeIf { it.isNotBlank() }
-                ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() && node.childCount == 0 && !isImageDescription(it) }
+                ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() && !isImageDescription(it) }
                 ?: continue
 
             node.getBoundsInScreen(bounds)
@@ -160,7 +195,10 @@ class PageReaderService : AccessibilityService() {
                 if (seen.add(key)) out += OcrLine(part, bounds.left, top, bounds.right, top + lineHeight)
             }
         }
-        return out
+        // A container's label often repeats all of its children's text in one long line. Drop those.
+        return out.filter { line ->
+            line.text.length < 40 || out.count { other -> other !== line && other.text.length >= 3 && line.text.contains(other.text) } < 2
+        }
     }
 
     private fun isImageDescription(s: String): Boolean {

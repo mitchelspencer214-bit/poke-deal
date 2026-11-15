@@ -240,8 +240,10 @@ class MainActivity : Activity() {
         } else {
             "Enable overlay permission to use the floating button."
         }
-        val pageReader = if (PageReaderService.isEnabledInSettings(this)) {
+        val pageReader = if (PageReaderService.isEnabledInSettings(this) && PageReaderService.isActive) {
             "Full-page reading is ON. Tapping P scrolls and reads the whole listing."
+        } else if (PageReaderService.isEnabledInSettings(this)) {
+            "Full-page reading is ON in settings but not connected. Turn it off and on again in Full-Page Reading Settings."
         } else {
             "Full-page reading is OFF (P captures one screen). To turn on: Full-Page Reading Settings > Installed apps > Poke Deal > On. " +
                 "If it's greyed out: Settings > Apps > Poke Deal > ⋮ menu > Allow restricted settings, then try again."
@@ -265,6 +267,9 @@ class MainActivity : Activity() {
                 "Unknown time"
             }
             "Scanned $date\n\n$text"
+        }
+        prefs.getString(ScanResults.PREFS_READER_LOG, null)?.let {
+            scanResult.text = "FULL-PAGE READER: $it\n\n" + scanResult.text
         }
     }
 
