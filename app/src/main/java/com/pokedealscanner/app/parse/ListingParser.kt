@@ -21,7 +21,11 @@ data class Price(
     val firm: Boolean = false,
 ) {
     fun display(): String {
-        val base = if (amount < 1.0) "${(amount * 100).toInt()}¢" else money(amount)
+        val base = when {
+            raw.equals("Free", ignoreCase = true) -> "Free"
+            amount < 1.0 -> "${(amount * 100).toInt()}¢"
+            else -> money(amount)
+        }
         val flags = listOfNotNull(
             if (each) "each" else null,
             if (obo) "obo" else null,
@@ -91,6 +95,7 @@ object ListingParser {
         "today's picks", "hide listing", "see translation", "description", "see less",
         "about this item", "marketplace", "condition", "view seller profile",
         "message seller", "like", "follow", "send offer", "make offer", "see all",
+        "close", "navigate to search", "more actions", "back", "search", "options",
     )
 
     private val DESCRIPTION_STOP = listOf(
@@ -104,7 +109,8 @@ object ListingParser {
         """^(condition\b.*|new|used\s*[-–]?\s*(like new|good|fair)?|like new|brand new|for parts.*)$""",
         RegexOption.IGNORE_CASE,
     )
-    private val LISTED_LINE = Regex("""^listed\b.*""", RegexOption.IGNORE_CASE)
+    private val LISTED_LINE = Regex("""^(just )?listed\b.*""", RegexOption.IGNORE_CASE)
+    private val IMAGE_LABEL = Regex("""^(product image|photo|image)\s*,?\s*\d+\s*of\s*\d+$""", RegexOption.IGNORE_CASE)
 
     // ---------- Sponsored ads ----------
 
@@ -160,7 +166,7 @@ object ListingParser {
         // 1. Reading order, minus phone status bar and nav bar.
         val lines = rawLines
             .map { it.copy(text = clean(it.text)) }
-            .filter { it.text.isNotBlank() }
+            .filter { it.text.isNotBlank() && !IMAGE_LABEL.matches(it.text) }
             .filter { screenHeight <= 0 || (it.bottom > screenHeight * STATUS_BAR_FRACTION && it.top < screenHeight * NAV_BAR_FRACTION) }
             .sortedWith(compareBy({ it.top / 12 }, { it.left }))
 
@@ -250,7 +256,7 @@ object ListingParser {
 
     private fun isNoise(s: String): Boolean {
         val l = s.lowercase().trim().trimEnd('.', ':')
-        return l in UI_NOISE || l.length <= 1 || l == "see more"
+        return l in UI_NOISE || l.length <= 1 || l == "see more" || LISTED_LINE.matches(s.trim())
     }
 
     /** Fixes common OCR misreads in money: "SJII 99" -> "$11.99", "S8O" -> "$80". */
@@ -541,6 +547,10 @@ object ListingParser {
         val priced = items.filter { it.price != null }
         val context = "${title.orEmpty()} $description"
 
+        if (amount == 0.0 && main.raw.equals("Free", ignoreCase = true)) {
+            val trade = Regex("""\b(trade|trading|swap|ft|lf|looking for)\b""", RegexOption.IGNORE_CASE).containsMatchIn(context)
+            return MainPriceMeaning.PLACEHOLDER to if (trade) "listed as Free; it's a trade post" else "listed as Free; check the description or message the seller"
+        }
         if (amount in PLACEHOLDER_PRICES && (priced.isNotEmpty() || amount <= 1.0 || amount == 123.0 || amount == 1234.0)) {
             return MainPriceMeaning.PLACEHOLDER to "${money(amount)} is a common placeholder; real prices are likely in the description or by message"
         }

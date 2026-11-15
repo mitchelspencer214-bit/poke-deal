@@ -81,7 +81,7 @@ class PageReaderService : AccessibilityService() {
             )
             return
         }
-        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s)${if (lastSeeMore) ", tapped See more" else ""}.")
+        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.")
         val pageText = lines.joinToString("\n") { it.text }
         try {
             val parsed = ListingParser.parse(lines, 0)
@@ -102,6 +102,7 @@ class PageReaderService : AccessibilityService() {
     @Volatile private var lastPackage: String = "?"
     @Volatile private var lastPages = 0
     @Volatile private var lastSeeMore = false
+    @Volatile private var lastTrail = ""
 
     /** The app window under the P button (Facebook), never our own overlay. */
     private fun targetRoot(): AccessibilityNodeInfo? {
@@ -120,7 +121,7 @@ class PageReaderService : AccessibilityService() {
     }
 
     private fun readPage(): List<OcrLine>? {
-        lastProblem = null; lastPages = 0; lastSeeMore = false
+        lastProblem = null; lastPages = 0; lastSeeMore = false; lastTrail = ""
         val first = targetRoot()
         if (first == null) {
             lastProblem = "Couldn't see the app behind the P button (Android returned no window). Used screen capture."
@@ -129,9 +130,11 @@ class PageReaderService : AccessibilityService() {
         lastPackage = first.packageName?.toString() ?: "?"
 
         val pages = mutableListOf<List<OcrLine>>()
-        var scrolls = 0
+        val moves = mutableListOf<Boolean>() // true = finger swipe, false = scroll command
+        val trail = mutableListOf<String>()
         var clickedSeeMore = false
         var lastSignature = ""
+        var useSwipe = false
 
         var step = 0
         while (step < MAX_PAGES) {
@@ -144,27 +147,47 @@ class PageReaderService : AccessibilityService() {
                 if (seeMore != null && click(seeMore)) {
                     clickedSeeMore = true
                     lastSeeMore = true
+                    trail += "tapped See more"
                     Thread.sleep(SETTLE_MS)
                     continue
                 }
             }
 
+            val signature = lines.joinToString("|") { it.text }
+            if (signature == lastSignature) {
+                // The last move didn't change anything on screen.
+                if (!useSwipe) {
+                    // Scroll command was ignored (common in Facebook). Undo nothing; switch to a finger swipe.
+                    useSwipe = true
+                    moves.removeAt(moves.lastIndex)
+                    trail += "scroll command didn't move the page, switching to swipe"
+                    if (swipe(forward = true)) { moves += true; Thread.sleep(SWIPE_SETTLE_MS); continue }
+                }
+                trail += "reached the bottom"
+                break
+            }
+            lastSignature = signature
             pages += lines
             lastPages = pages.size
-            val signature = lines.joinToString("|") { it.text }
-            if (signature == lastSignature) break // didn't move: bottom of page
-            lastSignature = signature
+            trail += "screen ${pages.size}: ${lines.size} items"
 
-            if (pastDescription(lines)) break
-            if (!scroll(root, forward = true)) break
-            scrolls++
-            Thread.sleep(SETTLE_MS)
+            if (pastDescription(lines)) { trail += "passed the description"; break }
+
+            val moved = if (useSwipe) swipe(forward = true) else scrollCommand(root, forward = true)
+            if (!moved) {
+                if (!useSwipe && swipe(forward = true)) { useSwipe = true; moves += true; Thread.sleep(SWIPE_SETTLE_MS); continue }
+                trail += "couldn't scroll"
+                break
+            }
+            moves += useSwipe
+            Thread.sleep(if (useSwipe) SWIPE_SETTLE_MS else SETTLE_MS)
         }
+        lastTrail = trail.joinToString("; ")
 
         // Put the user back where they started.
-        repeat(scrolls) {
-            targetRoot()?.let { scroll(it, forward = false) }
-            Thread.sleep(250)
+        for (wasSwipe in moves.asReversed()) {
+            if (wasSwipe) swipe(forward = false) else targetRoot()?.let { scrollCommand(it, forward = false) }
+            Thread.sleep(300)
         }
 
         return PageMerger.merge(pages)
@@ -224,10 +247,9 @@ class PageReaderService : AccessibilityService() {
     private fun pastDescription(lines: List<OcrLine>): Boolean =
         lines.any { l -> val t = l.text.lowercase(); END_MARKERS.any { t.startsWith(it) } }
 
-    private fun scroll(root: AccessibilityNodeInfo, forward: Boolean): Boolean {
+    private fun scrollCommand(root: AccessibilityNodeInfo, forward: Boolean): Boolean {
         val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-        largestScrollable(root)?.let { if (it.performAction(action)) return true }
-        return swipe(forward)
+        return largestScrollable(root)?.performAction(action) == true
     }
 
     private fun largestScrollable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -238,7 +260,8 @@ class PageReaderService : AccessibilityService() {
         val r = Rect()
         while (stack.isNotEmpty()) {
             val node = stack.removeLast()
-            if (node.isScrollable && node.isVisibleToUser) {
+            val cls = node.className?.toString().orEmpty()
+            if (node.isScrollable && node.isVisibleToUser && !cls.contains("Pager") && !cls.contains("Horizontal")) {
                 node.getBoundsInScreen(r)
                 val area = r.width() * r.height()
                 if (area > bestArea) { best = node; bestArea = area }
@@ -259,7 +282,7 @@ class PageReaderService : AccessibilityService() {
             lineTo(x, if (forward) high else low)
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 350))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 600))
             .build()
         val done = CountDownLatch(1)
         var ok = false
@@ -275,6 +298,7 @@ class PageReaderService : AccessibilityService() {
     companion object {
         private const val MAX_PAGES = 8
         private const val SETTLE_MS = 650L
+        private const val SWIPE_SETTLE_MS = 900L
 
         private val END_MARKERS = listOf(
             "seller information", "seller details", "today's picks", "location is approximate",

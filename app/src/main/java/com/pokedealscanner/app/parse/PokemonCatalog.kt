@@ -68,7 +68,7 @@ object PokemonCatalog {
 
     /** Product type label -> phrases that identify it (lowercase). */
     val PRODUCT_TYPES: List<Pair<String, List<String>>> = listOf(
-        "Elite Trainer Box" to listOf("elite trainer box", "etb", "pc etb", "pokemon center etb"),
+        "Elite Trainer Box" to listOf("elite trainer box", "elite trainer boxes", "etb", "etbs", "pc etb", "pokemon center etb"),
         "Booster Box" to listOf("booster box"),
         "Booster Bundle" to listOf("booster bundle", "bundle of packs"),
         "Ultra Premium Collection" to listOf("ultra premium collection", "upc"),

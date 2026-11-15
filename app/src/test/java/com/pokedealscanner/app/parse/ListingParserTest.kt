@@ -226,4 +226,20 @@ class ListingParserTest {
         assertFalse(p.sponsored)
         assertTrue(p.warnings.isEmpty())
     }
+
+    @Test fun mitchsTradePostFromPageReader() {
+        val p = ListingParser.parse(
+            screen(
+                "Close", "Navigate to Search", "More actions", "Product Image,1 of 1", "LOOKING FOR TRADE", "Free",
+                "Just listed · 15 hours ago", "Save", "Share", "Message seller", "Send", "Is this still available?",
+                "Description", "Looking to trade my Moonbreon for sealed Prismatic ETBs",
+            ),
+            0,
+        )
+        println(ListingFormatter.summary(p))
+        assertEquals("LOOKING FOR TRADE", p.title)
+        assertEquals("Free", p.mainPrice!!.display())
+        assertTrue(p.mainPriceReason!!.contains("trade"))
+        assertEquals(1, p.items.size)
+    }
 }
