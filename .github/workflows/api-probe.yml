@@ -1,0 +1,40 @@
+name: API probe (temporary)
+on:
+  push:
+    branches: [api-probe]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe price APIs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          {
+            echo "## pokemontcg.io (no key)"
+            curl -s -m 25 -o p1.json -w "HTTP %{http_code} in %{time_total}s\n" 'https://api.pokemontcg.io/v2/cards?q=name:%22charizard%20ex%22%20set.name:%22obsidian%20flames%22&select=name,number,rarity,set,tcgplayer&pageSize=5'
+            jq -c '.data[]? | {name, number, rarity, set: .set.name, upd: .tcgplayer.updatedAt, prices: .tcgplayer.prices}' p1.json | head -5
+            echo
+            echo "## pokemontcg.io newest set check"
+            curl -s -m 25 'https://api.pokemontcg.io/v2/sets?orderBy=-releaseDate&pageSize=5&select=name,releaseDate' | jq -c '.data[]?'
+            echo
+            echo "## TCGdex search"
+            curl -s -m 25 -o t1.json -w "HTTP %{http_code} in %{time_total}s\n" 'https://api.tcgdex.net/v2/en/cards?name=eq:Charizard%20ex'
+            jq -c '.[]? | {id, name}' t1.json | head -8
+            echo
+            echo "## TCGdex card detail (first result)"
+            id=$(jq -r '.[0].id' t1.json)
+            curl -s -m 25 "https://api.tcgdex.net/v2/en/cards/$id" | jq -c '{id, name, rarity, set: .set.name, pricing: .pricing.tcgplayer}'
+            echo
+            echo "## TCGdex newest sets"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets' | jq -c '.[-6:][] | {id, name}'
+            echo
+            echo "## TCGdex Delta Reign / Phantasmal Flames set lookup"
+            curl -s -m 25 'https://api.tcgdex.net/v2/en/sets?name=Phantasmal' | jq -c '.[]? | {id, name}'
+          } > out.txt 2>&1
+          cat out.txt
+          gh release delete api-probe --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create api-probe -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "API probe" --notes-file out.txt
