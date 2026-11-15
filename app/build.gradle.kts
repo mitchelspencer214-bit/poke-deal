@@ -11,8 +11,13 @@ android {
         applicationId = "com.pokedealscanner.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 9
+        versionName = "0.9"
+
+        // Phones only: drops emulator (x86) copies of the OCR engine to shrink the APK.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     compileOptions {
@@ -27,4 +32,5 @@ android {
 
 dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -3,7 +3,6 @@ package com.pokedealscanner.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -25,6 +24,9 @@ import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.pokedealscanner.app.parse.ListingFormatter
+import com.pokedealscanner.app.parse.ListingParser
+import com.pokedealscanner.app.parse.OcrLine
 
 class ScreenCaptureService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -89,13 +91,6 @@ class ScreenCaptureService : Service() {
                 FOREGROUND_CHANNEL,
                 "Poke Deal screen scanning",
                 NotificationManager.IMPORTANCE_LOW
-            )
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                RESULT_CHANNEL,
-                "Poke Deal scan results",
-                NotificationManager.IMPORTANCE_DEFAULT
             )
         )
     }
@@ -233,14 +228,27 @@ class ScreenCaptureService : Service() {
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             recognizer.process(InputImage.fromBitmap(bitmap, 0))
                 .addOnSuccessListener { result ->
-                    val text = result.text.trim()
-                    finishWithResult(
-                        if (text.isBlank()) {
-                            "No readable text was found on this screen. Try a listing with visible title and description."
-                        } else {
-                            text
+                    val raw = result.text.trim()
+                    if (raw.isBlank()) {
+                        finishWithResult("No readable text was found on this screen. Try a listing with visible title and description.")
+                        return@addOnSuccessListener
+                    }
+                    val lines = result.textBlocks.flatMap { block ->
+                        block.lines.mapNotNull { line ->
+                            val box = line.boundingBox ?: return@mapNotNull null
+                            OcrLine(line.text, box.left, box.top, box.right, box.bottom)
                         }
-                    )
+                    }
+                    try {
+                        val parsed = ListingParser.parse(lines, bitmap.height)
+                        finishWithResult(
+                            text = ListingFormatter.summary(parsed) + "\n\n----- RAW SCREEN TEXT -----\n" + raw,
+                            headline = ListingFormatter.headline(parsed),
+                        )
+                    } catch (e: Exception) {
+                        // Never lose a scan because the parser tripped; show the raw text instead.
+                        finishWithResult("Couldn't organize this listing (${e.localizedMessage}).\n\n$raw")
+                    }
                 }
                 .addOnFailureListener { error ->
                     finishWithResult(
@@ -259,39 +267,10 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun finishWithResult(text: String) {
+    private fun finishWithResult(text: String, headline: String? = null) {
         if (scanFinished) return
         scanFinished = true
-
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-            .putString(PREFS_TEXT, text)
-            .putLong(PREFS_TIME, System.currentTimeMillis())
-            .apply()
-
-        val showResult = Intent(this, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_SHOW_RESULT
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            2202,
-            showResult,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val preview = text.replace('\n', ' ').take(110)
-        val notification = Notification.Builder(this, RESULT_CHANNEL)
-            .setContentTitle("Poke Deal scan complete")
-            .setContentText(preview)
-            .setStyle(Notification.BigTextStyle().bigText(text.take(2500)))
-            .setSmallIcon(android.R.drawable.ic_menu_search)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        getSystemService(NotificationManager::class.java)
-            .notify(RESULT_NOTIFICATION_ID, notification)
+        ScanResults.publish(this, text, headline)
     }
 
     override fun onDestroy() {
@@ -318,13 +297,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_CODE = "capture_result_code"
         const val EXTRA_RESULT_DATA = "capture_result_data"
 
-        const val PREFS_NAME = "poke_deal_scan"
-        const val PREFS_TEXT = "last_scan_text"
-        const val PREFS_TIME = "last_scan_time"
 
         private const val FOREGROUND_CHANNEL = "poke_deal_capture"
-        private const val RESULT_CHANNEL = "poke_deal_results"
         private const val FOREGROUND_NOTIFICATION_ID = 2001
-        private const val RESULT_NOTIFICATION_ID = 2002
     }
 }

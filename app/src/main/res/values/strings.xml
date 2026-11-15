@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="page_reader_description">Lets Poke Deal read a whole listing when you tap the floating P button: it taps "See more", scrolls down to read the full description, then scrolls back up. It only reads the screen when you tap P, and nothing leaves your phone.</string>
+</resources>
