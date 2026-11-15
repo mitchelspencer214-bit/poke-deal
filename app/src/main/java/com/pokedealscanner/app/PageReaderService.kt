@@ -12,8 +12,6 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import com.pokedealscanner.app.parse.ListingFormatter
-import com.pokedealscanner.app.parse.ListingParser
 import com.pokedealscanner.app.parse.OcrLine
 import com.pokedealscanner.app.parse.PageMerger
 import java.util.concurrent.CountDownLatch
@@ -57,43 +55,33 @@ class PageReaderService : AccessibilityService() {
 
         Thread {
             val lines = try { readPage() } catch (_: Exception) { null }
+            val usable = lines != null && lines.size >= 3 && lines.any { it.text.contains('$') || it.text.length > 25 }
+            if (usable) {
+                // Parse + look up prices here, off the main thread. P keeps showing "…" meanwhile.
+                ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.")
+                ScanPipeline.process(this, lines, 0, "PAGE TEXT (read directly, full page)", lines.joinToString("\n") { it.text })
+            }
             main.post {
                 scanning = false
                 FloatingButtonService.setBusy(false)
-                handle(lines)
+                if (!usable) fallBackToCapture(lines)
             }
         }.start()
     }
 
-    private fun handle(lines: List<OcrLine>?) {
-        val usable = lines != null && lines.size >= 3 && lines.any { it.text.contains('$') || it.text.length > 25 }
-        if (!usable) {
-            ScanResults.logReader(
+    private fun fallBackToCapture(lines: List<OcrLine>?) {
+        ScanResults.logReader(
                 this,
                 lastProblem ?: "Read ${lines?.size ?: 0} text items from $lastPackage, not enough for a listing. " +
                     "Used screen capture. First items: ${lines.orEmpty().take(12).joinToString(" | ") { it.text.take(40) }}" +
                     "\n\nDEBUG $lastDump",
-            )
-            // This app hides its text. Fall back to screen capture + OCR.
-            startActivity(
-                Intent(this, MainActivity::class.java)
-                    .setAction(MainActivity.ACTION_SCAN)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            )
-            return
-        }
-        ScanResults.logReader(this, "Worked. Read ${lines!!.size} text items from $lastPackage over $lastPages screen(s). Steps: $lastTrail.")
-        val pageText = lines.joinToString("\n") { it.text }
-        try {
-            val parsed = ListingParser.parse(lines, 0)
-            ScanResults.publish(
-                this,
-                ListingFormatter.summary(parsed) + "\n\n----- PAGE TEXT (read directly, full page) -----\n" + pageText,
-                ListingFormatter.headline(parsed),
-            )
-        } catch (e: Exception) {
-            ScanResults.publish(this, "Couldn't organize this listing (${e.localizedMessage}).\n\n$pageText")
-        }
+        )
+        // This app hides its text. Fall back to screen capture + OCR.
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_SCAN)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        )
     }
 
     // ---------- Reading ----------

@@ -12,6 +12,15 @@ An Android floating scanner for Pokémon listings on Facebook Marketplace.
    - **Warnings**: sponsored ads, sealed products priced far below normal, descriptions cut off by "See more"
 4. Results show in a notification and under **Last Scan**, with the raw screen text below.
 
+## Deal check
+Every scan compares asking prices to market prices:
+- **Sealed** (ETBs, booster boxes, booster bundles): from `app/src/main/assets/sealed-prices.json`.
+  Edit that file on GitHub to add or update prices; the app downloads it (every 6 hours), no reinstall needed.
+- **Single cards**: live TCGplayer market prices from [TCGdex](https://tcgdex.dev) (free, no key).
+  Adding the card number (like 223/197) gives an exact match. Graded cards show the raw price only.
+- Verdict: **GOOD DEAL** at 85% of market or less, **FAIR** up to 105%, **OVERPRICED** above that
+  (cutoffs are in the same JSON file).
+
 ## Full-page reading (recommended)
 Turn on **Poke Deal full-page reading** in Android Accessibility settings (button in the app).
 Then tapping P reads the listing's text directly (no OCR typos), taps "See more",
@@ -28,4 +37,5 @@ Open on your phone: https://github.com/mitchelspencer214-bit/poke-deal/releases/
 - `FloatingButtonService.kt`: the floating P button
 
 ## Not built yet
-- Market price lookup and deal scoring
+- Graded (PSA/BGS) price lookups
+- UPCs, tins, and other collection boxes in the price list

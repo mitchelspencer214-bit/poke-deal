@@ -11,8 +11,8 @@ android {
         applicationId = "com.pokedealscanner.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.9"
+        versionCode = 10
+        versionName = "1.0"
 
         // Phones only: drops emulator (x86) copies of the OCR engine to shrink the APK.
         ndk {

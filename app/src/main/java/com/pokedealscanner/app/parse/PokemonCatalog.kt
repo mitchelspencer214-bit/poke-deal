@@ -66,6 +66,11 @@ object PokemonCatalog {
         "moonbreon" to ("Umbreon VMAX Alt Art" to "Evolving Skies"),
     )
 
+    /** Nickname -> exact card for price lookups: (card name, set, card number). */
+    val NICKNAME_CARDS: Map<String, Triple<String, String, String>> = mapOf(
+        "moonbreon" to Triple("Umbreon VMAX", "Evolving Skies", "215"),
+    )
+
     /** Product type label -> phrases that identify it (lowercase). */
     val PRODUCT_TYPES: List<Pair<String, List<String>>> = listOf(
         "Elite Trainer Box" to listOf("elite trainer box", "elite trainer boxes", "etb", "etbs", "pc etb", "pokemon center etb"),
