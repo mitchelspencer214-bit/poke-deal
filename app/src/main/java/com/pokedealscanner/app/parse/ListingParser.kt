@@ -200,6 +200,7 @@ object ListingParser {
                 val item = parseItem(piece)
                 val lotStatement = LOT_WORDS.containsMatchIn(piece) && item.product == null && item.set == null && item.grade == null
                 if (lotStatement) notes += piece
+                else if (item.price == null && piece.split(" ").size > 10) notes += piece
                 else if (looksLikeItem(piece, item)) items += item
                 else if (isBoxArtFragment(piece)) continue
                 else if (!isNoise(piece)) notes += piece.removeSuffix("See more").trim()
@@ -252,6 +253,7 @@ object ListingParser {
 
     private fun clean(s: String): String = s
         .replace("\uFFFC", "")
+        .replace('×', 'x').replace('✕', 'x').replace('✖', 'x')
         .replace('’', '\'').replace('‘', '\'').replace('“', '"').replace('”', '"')
         .replace(Regex("""\s+"""), " ")
         .trim()
@@ -310,7 +312,7 @@ object ListingParser {
 
     /** Finds an item's price in a line, avoiding card numbers, grades, years, and quantities. */
     fun findPrice(line: String): Pair<Price, IntRange>? {
-        val s = fixOcrMoney(line)
+        val s = fixOcrMoney(line.replace('×', 'x'))
         val each = EACH.containsMatchIn(s)
         val obo = OBO.containsMatchIn(s)
         val firm = FIRM.containsMatchIn(s)
@@ -423,7 +425,7 @@ object ListingParser {
     // ---------- Item parsing ----------
 
     fun parseItem(raw: String): LineItem {
-        val line = BULLET.replace(raw, "").trim()
+        val line = BULLET.replace(raw.replace('×', 'x'), "").trim()
         val priceHit = findPrice(line)
         val price = priceHit?.first
 
@@ -431,6 +433,7 @@ object ListingParser {
         var name = if (priceHit != null) fixed.removeRange(priceHit.second) else fixed
         name = name
             .replace(EACH, "").replace(OBO, "").replace(FIRM, "")
+            .replace(Regex("""(?<![A-Za-z0-9])x\s?\d{1,4}\b|\b\d{1,4}\s?x(?![A-Za-z0-9])""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\b(asking|price|for|at)\s*$""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s+"""), " ")
             .trim().trim('-', '–', '—', ':', '=', '@', '|', ',', ' ', '.')

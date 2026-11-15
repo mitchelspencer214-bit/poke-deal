@@ -262,8 +262,43 @@ class ListingParserTest {
         assertFalse(p.descriptionTruncated)
         assertTrue(p.setsMentioned.toString(), "30th Celebration" in p.setsMentioned)
         assertFalse(p.setsMentioned.toString(), "Celebrations" in p.setsMentioned)
-        assertEquals(3, p.items.size)
-        assertEquals("PSA 9", p.items[1].grade)
-        assertEquals(2, p.items[2].quantity)
+        assertEquals(2, p.items.size)
+        assertEquals("PSA 9", p.items[0].grade)
+        assertEquals(2, p.items[1].quantity)
+        assertTrue(p.notes.any { it.startsWith("Looking for trade") })
+    }
+
+    @Test fun mitchsTradePostWithPriceList() {
+        // Exact page text from the v0.8 full-page reader.
+        val p = ListingParser.parse(
+            screen(
+                "Close", "Navigate to Search", "More actions", "Product Image,1 of 1", "LOOKING FOR TRADE", "Free",
+                "Just listed · 15 hours ago", "Save", "Share", "Message seller", "Is this still available?", "Send",
+                "Description", "See less",
+                "Looking for trade. Preferably Slabs or 30th Celebration. Open to cash offers but it isnt what I am prioritizing.",
+                "Will also trade for othe sets of sealed but for 90% market in my favor.",
+                "Serious inquiries only.",
+                "Prices below",
+                "Delta Reign ETB- 90 ×3",
+                "Delta Reign Booster Box- 190 ×2",
+                "Charizard UPC- 220",
+                "Surging Sparks ETB- 120",
+                "Prices are negotiable for trade ONLY cash I would want market.",
+                "All new no tears and i prefer you pick up.",
+            ),
+            0,
+        )
+        println(ListingFormatter.summary(p))
+        assertEquals(4, p.items.size)
+        assertEquals("Delta Reign ETB", p.items[0].name)
+        assertEquals(90.0, p.items[0].price!!.amount, 0.001)
+        assertEquals(3, p.items[0].quantity)
+        assertEquals(190.0, p.items[1].price!!.amount, 0.001)
+        assertEquals(2, p.items[1].quantity)
+        assertEquals("Booster Box", p.items[1].product)
+        assertEquals(220.0, p.items[2].price!!.amount, 0.001)
+        assertEquals("Ultra Premium Collection", p.items[2].product)
+        assertEquals(120.0, p.items[3].price!!.amount, 0.001)
+        assertTrue(p.warnings.toString(), p.warnings.none { it.contains("far below") })
     }
 }
